@@ -1,2 +1,2 @@
 # AdvAttacks
-Repository destined to study the use of different pytorch pretrained models for image classification as well as the generation of adversarial image manipulations.
+Repository designed for studying the use of various pre-trained PyTorch models for image classification, as well as generating adversarial image manipulations.
