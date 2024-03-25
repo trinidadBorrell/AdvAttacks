@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 import torch
+import torchvision
 from torch.utils.data import DataLoader
 from torchvision import transforms, models
 import torch.nn.functional as F
@@ -56,7 +57,11 @@ def get_fine2course_mapping():
     [unique_coarse.append(value) for value in fine_to_coarse_mapping.values() if value not in unique_coarse]
 
     return fine_to_coarse_mapping, unique_coarse
-    
+
+def get_models_ensamble( models ):
+    weights = [models.EfficientNet_B4_Weights.IMAGENET1K_V1, models.EfficientNet_B5_Weights.IMAGENET1K_V1, models.ResNet101_Weights.IMAGENET1K_V1, models.ResNet152_Weights.IMAGENET1K_V1, models.Inception_V3_Weights.IMAGENET1K_V1]
+    models = [models.efficientnet_b4(weights=weights[0]), models.efficientnet_b5(weights = weights[1]), models.resnet101(weights=weights[2]), models.resnet152(weights=weights[3]), models.inception_v3(weights=weights[4])]
+    return models
 
 use_cuda=False
 device = torch.device("cuda" if use_cuda and torch.cuda.is_available() else "cpu")
@@ -74,9 +79,11 @@ def get_class_model_names():
 def classify_images(folder_path, model_name, classes, top_classes=3):
     # Load the pretrained model
     if model_name == "resnet18":
-        model = models.resnet18(pretrained=True)
+        weights = models.ResNet18_Weights.IMAGENET1K_V1
+        model = models.resnet18(weights = weights)
     elif model_name == "resnet50":
-        model = models.resnet50(pretrained=True)
+        weights = models.ResNet50_Weights.IMAGENET1K_V1
+        model = models.resnet50(weights = weights)
     elif model_name == "efficientnetB0":
         weights = models.EfficientNet_B0_Weights.IMAGENET1K_V1
         model = models.efficientnet_b0(weights=weights)
@@ -122,7 +129,7 @@ def classify_images(folder_path, model_name, classes, top_classes=3):
     return results
 
 #Ploting results
-def plot_results(folder_path, results, adv_attack = False, coarse_classes = False, number = 3):
+def plot_results(folder_path, results, adv_attack = False, coarse_classes = False, number = 100):
     # Get list of image files in the folder
     image_files = [file for file in os.listdir(folder_path) if file.endswith(('.jpg', '.jpeg', '.png'))]
 
@@ -188,9 +195,9 @@ def ifgsm_attack(input, epsilon, data_grad):
 
         if torch.norm((pert_out - input), p=float('inf')) > epsilon / 255:
             break
-    
+
+    adv_pert = torch.clamp(input - pert_out, 0, 1)
     pert_out = torch.clamp(pert_out, 0, 1)
-    adv_pert = torch.clamp(pert_out - input, 0,1)
 
     return pert_out, adv_pert
 
@@ -206,7 +213,7 @@ def fgsm_attack(image, epsilon, data_grad):
 
 #1) ------------------SIMPLE ATTACK iFGSM------------------
 
-def simple_attack(image_folder, model, weights, epsilon, classes, targeted = False, t = 0, num_classes=3, graph=False, folder=False, control=False):
+def simple_attack(image_folder, model, weights, epsilon, classes, targeted = False, t = 0, num_classes=100, graph=False, folder=False, control=False):
     """Test function to generate adversarial images and obtain predictions."""
     model.eval()
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
@@ -312,7 +319,7 @@ def simple_attack(image_folder, model, weights, epsilon, classes, targeted = Fal
 
 
 #2)-----------------ENSAMBLE ATTACK iFGSM-------------------------
-def ensamble_attack(image_folder, models, weights, epsilon, classes, targeted = False, t = 0, num_classes=3, graph=False, folder=False, control=False):
+def ensamble_attack(image_folder, models, weights, epsilon, classes, targeted = False, t = 0, num_classes=100, graph=False, folder=False, control=False):
     """Test function to generate adversarial images and obtain predictions using an ensemble of models."""
     for model in models:
         model.eval()
@@ -430,11 +437,276 @@ def ensamble_attack(image_folder, models, weights, epsilon, classes, targeted = 
 
 #3)-----------------ENSAMBLE ATTACK iFGSM + COURSE CLASSES-------------------------
 
+def get_course_arrays():
+    labels = ['cat', 'dog', 'bird', 'bottle', 'sheep', 'chair', 'elephant', 'clock', 'truck']
 
-def ensamble_attack_course_classes(image_folder, models, weights, epsilon, classes, targeted = False, t = 0, num_classes=3, graph=False, folder=False, control=False):
+    #cat : 6 (282 - 286) -> 5 + dudoso: 385 
+    #obs: cambia con respecto a los valores de arriba porque las lineas en imageclassnet =/= a la ubicación en la lista importada
+    cat = np.array(list(range(281, 286)) + [383])
+
+    #dog: 120 (152 - 269) -> 118 + (539) + dudoso: 277 African hunting dog
+    #obs: cambia con respecto a los valores de arriba porque las lineas en imageclassnet =/= a la ubicación en la lista importada
+    dog = np.array(list(range(151, 269)) + [275, 537])
+
+    #bird: 52 (8 - 25) -> 18 + (82 - 101) -> 20 + (129 - 148) -> 20
+    #obs: cambia con respecto a los valores de arriba porque las lineas en imageclassnet =/= a la ubicación en la lista importada
+    bird = np.array(list(range(7, 25)) + list(range(80, 101)) + list(range(127, 147))) 
+
+    #bottle: 7 (441) + (721) + (738) + (900) + (909) + dudosas : (456: bottlecap y 513: bottlescrew)
+    #obs: cambia con respecto a los valores de arriba porque las lineas en imageclassnet =/= a la ubicación en la lista importada
+    bottle = np.array([440, 455, 512, 720, 737, 898, 907])
+
+    #sheep: 6 (350 -351) -> 2 
+    #obs: cambia con respecto a los valores de arriba porque las lineas en imageclassnet =/= a la ubicación en la lista importada
+    sheep = np.array([348, 349])
+
+    #chair: 4 (424) + (560) + (766) 
+    #obs: cambia con respecto a los valores de arriba porque las lineas en imageclassnet =/= a la ubicación en la lista importada
+    chair = np.array([423, 559, 765])
+
+    #elephant: 2 (386 - 387) -> 2
+    #obs: cambia con respecto a los valores de arriba porque las lineas en imageclassnet =/= a la ubicación en la lista importada
+    elephant = np.array([385, 386])
+
+    #clock: 3 (531) + (410) + (893) 
+    #obs: cambia con respecto a los valores de arriba porque las lineas en imageclassnet =/= a la ubicación en la lista importada
+    clock = np.array([409, 530, 892])
+
+    #truck: 8 (556) + (570) + (718) + (865) + (868) + (676) + (657)
+    #obs: cambia con respecto a los valores de arriba porque las lineas en imageclassnet =/= a la ubicación en la lista importada
+    truck = np.array([555, 569, 656, 675, 717, 864, 867])
+
+    #index = [np.arange(8, 25), np.arange(151, 276), np.arange(280, 286)]
+    index = [cat, dog, bird, bottle, sheep, chair, elephant, clock, truck]
+    return labels, index
+
+def eliminate_elements_torch(tensor, indices):
+    # Use torch.masked_select() to select elements not in the specified indices
+    mask = torch.ones_like(tensor, dtype=torch.bool)
+    mask[indices] = 0
+    result = torch.masked_select(tensor, mask)
+    return result
+
+def ensamble_attack_course_classes(image_folder, models, weights, epsilon, classes, targeted = False, t = 0, num_classes=100, graph=False, folder=False, control=False):
     """Test function to generate adversarial images and obtain predictions using an ensemble of models."""
 
-    fine_to_coarse_mapping, unique_coarse = get_fine2course_mapping()
+    c_classes, c_index = get_course_arrays() 
+
+    for model in models:
+        model.eval()
+
+    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+
+    # Prepare output directory
+    if folder:
+        if targeted == False:
+            output_dir = f"ensamble-attack_ensamble-c_epsilon-{epsilon}-untargeted"
+        else:
+            output_dir = f"ensamble-attack_ensamble-c_epsilon-{epsilon}-targeted"
+            
+        os.makedirs(output_dir, exist_ok=True)
+
+    results = []
+    print('Iterating over images in folder')
+    for image_name in tqdm(os.listdir(image_folder)):
+        image_path = os.path.join(image_folder, image_name)
+
+        # Load and transform image
+        img = Image.open(image_path)
+        transformed_image = weights(img).unsqueeze(0)
+        original_image = transformed_image.clone()
+
+        # Calculate ensemble predictions
+        ensemble_outputs = []
+        transformed_image.requires_grad = True
+        for model in models:
+            output = model(normalize(transformed_image))
+            ensemble_outputs.append(output)
+
+        ensemble_outputs = torch.stack(ensemble_outputs)
+        ensemble_mean_output = torch.mean(ensemble_outputs, dim=0)
+
+        # Get original predictions
+        original_output = ensemble_mean_output.clone()
+        original_probs = torch.softmax(original_output, dim=1)
+
+
+        # Calculate loss
+        loss = nn.CrossEntropyLoss()
+
+        if targeted == True:
+            target = torch.tensor([t])
+            cost = -loss(original_output, target)
+        else:
+            target = original_output.max(1)[1]
+            cost = -loss(original_output, target)
+
+        #Calculate grad
+        for model in models:
+            model.zero_grad()
+
+        #loss.backward()
+        grad = torch.autograd.grad(cost, transformed_image)[0]
+
+        # Generate adversarial image
+        perturbed_image, adv_pert = ifgsm_attack(transformed_image, epsilon, grad)
+
+        # Get perturbed predictions
+        perturbed_output = torch.mean(torch.stack([model(normalize(perturbed_image)) for model in models]), dim=0)
+        perturbed_probs = torch.softmax(perturbed_output, dim=1)
+
+        # Sort predictions
+        original_top_classes = original_probs[0].topk(num_classes)
+        perturbed_top_classes = perturbed_probs[0].topk(num_classes)
+
+        original_dict = {classes[idx.item()]: prob.item() for idx, prob in zip(original_top_classes.indices, original_top_classes.values)}
+        perturbed_dict = {classes[idx.item()]: prob.item() for idx, prob in zip(perturbed_top_classes.indices, perturbed_top_classes.values)}
+
+        # Compute coarse category scores
+        print('Fine Class --> Coarse class')
+
+        scores_original = torch.zeros(size= (len(c_index),))
+        scores_perturbed = torch.zeros(size= (len(c_index),))
+        all_scores = torch.zeros(size= (len(classes),))
+        all_scores_p = torch.zeros(size= (len(classes),))
+
+        for i in np.arange(1000):
+            c = np.array([i]) #course class indexs
+            non_c = np.delete(np.arange(1000), i) #non course class index
+
+            #Calculate Scores Course Clases - Non perturbed image
+            c_logit = original_output[:, c]
+            Si = torch.logsumexp(c_logit, dim = 1) 
+            non_c_logit = original_output[:, non_c]
+            Sj = torch.logsumexp(non_c_logit, dim = 1)
+            all_scores[i] = Si - Sj
+
+            #Calculate Scores Course Clases - Perturbed image
+            c_logit_p = perturbed_output[:, c]
+            Si_p = torch.logsumexp(c_logit_p, dim = 1) 
+            non_c_logit_p = original_output[:, non_c]
+            Sj_p = torch.logsumexp(non_c_logit_p, dim = 1)
+
+           # scores_perturbed[i] = F.softmax(Si_p - Sj_p, dim = 0)
+            # scores_perturbed[i] = Si_p - Sj_p / torch.logsumexp(original_output, dim = 1)
+            all_scores_p[i] = Si_p - Sj_p
+
+
+        for i in tqdm(np.arange(len(c_index))): #Iterate in the course classes
+
+            c = c_index[i] #course class indexs
+            non_c = np.delete(np.arange(1000), c) #non course class index
+
+            #Calculate Scores Course Clases - Non perturbed image
+            c_logit = original_output[:, c]
+
+            Si = torch.logsumexp(c_logit, dim = 1) 
+
+            non_c_logit = original_output[:, non_c]
+
+            Sj = torch.logsumexp(non_c_logit, dim = 1)
+
+            #scores_original[i] = F.softmax(Si - Sj, dim = 0)
+            scores_original[i] = Si - Sj 
+           # print(Si - Sj, Si - Sj / torch.logsumexp(original_output, dim = 1))
+           # print(torch.logsumexp(original_output, dim = 1))
+            #Calculate Scores Course Clases - Perturbed image
+            c_logit_p = perturbed_output[:, c]
+            Si_p = torch.logsumexp(c_logit_p, dim = 1) 
+
+            non_c_logit_p = original_output[:, non_c]
+            Sj_p = torch.logsumexp(non_c_logit_p, dim = 1)
+
+           # scores_perturbed[i] = F.softmax(Si_p - Sj_p, dim = 0)
+            # scores_perturbed[i] = Si_p - Sj_p / torch.logsumexp(original_output, dim = 1)
+            scores_perturbed[i] = Si_p - Sj_p
+
+        #Eliminate values of probs (perturbed and original)
+        coarse_idx = np.hstack(c_index) #index to eliminate
+
+        coarse_scores = eliminate_elements_torch(all_scores, coarse_idx)
+        pert_coarse_scores = eliminate_elements_torch(all_scores_p, coarse_idx)
+
+        new_classes = [string for idx, string in enumerate(classes) if idx not in coarse_idx]
+
+        #Concat new scores and new list of classes
+        #Turn results into probabilities
+        coarse_scores = torch.cat((coarse_scores, scores_original), dim = 0)
+        pert_coarse_scores = torch.cat((pert_coarse_scores,  scores_perturbed), dim = 0)
+
+        coarse_scores = torch.softmax(coarse_scores, dim = 0)
+        pert_coarse_scores = torch.softmax(pert_coarse_scores, dim = 0)
+
+      #  coarse_scores = torch.cat((coarse_scores, torch.unsqueeze(scores_original, dim=0)), dim = 1)
+      #  pert_coarse_scores = torch.cat((pert_coarse_scores,  torch.unsqueeze(scores_perturbed, dim = 0)), dim = 1)
+        new_classes = new_classes + c_classes
+
+        #sorting values 
+        sorted_probs, sorted_indices = torch.sort(coarse_scores, descending=True)
+        sorted_classes = [new_classes[i] for i in sorted_indices]
+
+        sorted_probs_p, sorted_indices_p = torch.sort(pert_coarse_scores, descending=True)
+        sorted_classes_p = [new_classes[i] for i in sorted_indices_p]
+
+        #define dicts with probs
+        probs_scores = {}
+        for key, value in zip(sorted_classes, sorted_probs):
+            probs_scores[key] = value.item() 
+
+        probs_p_scores = {}
+        for key, value in zip(sorted_classes_p, sorted_probs_p):
+            probs_p_scores[key] = value.item() 
+
+        results.append({'original': original_dict, 'perturbed': perturbed_dict, 'coarse_scores': probs_scores, 'pert_coarse_scores': probs_p_scores})
+      #  print(f'Fine dicts: {original_dict}, {perturbed_dict}')
+      #  print(f'Coarse dicts: {probs_p_scores}, {probs_p_scores}')
+
+        # Save adversarial image
+        if folder:
+            perturbed_image = perturbed_image.squeeze().detach().cpu().numpy().transpose(1, 2, 0)
+            perturbed_image = (perturbed_image * 255).astype('uint8')
+            Image.fromarray(perturbed_image).save(os.path.join(output_dir, image_name))
+
+        # Plot if graph is True
+        if graph:
+            print(f'Epsilon: {epsilon}')
+            if targeted == True:
+                print(f'Targeted Attack = {classes[t]}')
+            else:
+                print(f'Untargeted Attack. Maximize Original Output')
+
+            plt.subplot(1, 3, 1)
+            plt.imshow(original_image.squeeze().detach().cpu().numpy().transpose(1, 2, 0))
+            plt.title(f"Original: {max(original_dict, key=original_dict.get)} - {np.round(max(original_dict.values()), 3)}" + "\n" + f"Original: {max(probs_scores, key=probs_scores.get)} - {np.round(max(probs_scores.values()), 3)}", fontsize=7)
+            plt.axis('off')
+            plt.subplot(1, 3, 2)
+            if folder:
+                plt.imshow(perturbed_image)
+            else:
+                plt.imshow(perturbed_image.squeeze().detach().cpu().numpy().transpose(1, 2, 0))
+            plt.title(f"Perturbed: {max(perturbed_dict, key=perturbed_dict.get)} - {np.round(max(perturbed_dict.values()), 3)}" + "\n" + f"Perturbed: {max(probs_p_scores, key=probs_p_scores.get)} - {np.round(max(probs_p_scores.values()), 3)}", fontsize=7)
+            plt.axis('off')
+            
+            plt.subplot(1, 3, 3)
+            plt.imshow(adv_pert.squeeze().detach().cpu().numpy().transpose(1, 2, 0))
+            plt.title(f"Perturbation", fontsize=7)
+            plt.axis('off') 
+
+            plt.subplots_adjust(wspace=0.5)  # Add space between the plots
+            plt.show()
+
+    # Save results to txt
+    if folder:
+        with open(os.path.join(output_dir, 'results.txt'), 'w') as f:
+            for result in results:
+                f.write(f"Original: {result['original']}\nPerturbed: {result['perturbed']}\nCoarse Scores: {result['coarse_scores']}\nPerturbated Coarse Scores: {result['pert_coarse_scores']}\n")
+
+    return results
+
+def ensamble_attack_course_classes_sum(image_folder, models, weights, epsilon, classes, targeted = False, t = 0, num_classes=100, graph=False, folder=False, control=False):
+    """Test function to generate adversarial images and obtain predictions using an ensemble of models."""
+
+    c_classes, c_index = get_course_arrays() 
 
     for model in models:
         model.eval()
@@ -506,51 +778,53 @@ def ensamble_attack_course_classes(image_folder, models, weights, epsilon, class
         perturbed_dict = {classes[idx.item()]: prob.item() for idx, prob in zip(perturbed_top_classes.indices, perturbed_top_classes.values)}
 
         # Compute coarse category scores
-        coarse_scores = {}
-        pert_coarse_scores = {}
-
         print('Fine Class --> Coarse class')
-        for fine_class, coarse_class in tqdm(fine_to_coarse_mapping.items()):
 
-            fine_indices = [classes.index(fine_class)]
+        scores_original = torch.zeros(size= (len(c_index),))
+        scores_perturbed = torch.zeros(size= (len(c_index),))
 
-            #original
-            fine_logits = original_output[:, fine_indices]
-            fine_logits = fine_logits.view(fine_logits.size(0), -1)
-            other_indices = [idx for idx in range(original_output.size(1)) if idx not in fine_indices]
-            other_logits = original_output[:, other_indices]
-            coarse_scores[coarse_class] = (torch.logsumexp(fine_logits, dim = 1) - torch.logsumexp(other_logits, dim = 1))
+        for i in tqdm(np.arange(len(c_index))): #Iterate in the course classes
 
-            #perturbed
-            fine_logits = perturbed_output[:, fine_indices]
-            fine_logits = fine_logits.view(fine_logits.size(0), -1)
-            other_indices = [idx for idx in range(perturbed_output.size(1)) if idx not in fine_indices]
-            other_logits = perturbed_output[:, other_indices]
-            pert_coarse_scores[coarse_class] = (torch.logsumexp(fine_logits, dim = 1) - torch.logsumexp(other_logits, dim = 1))
+            c = c_index[i] #course class indexs
 
-        #turn logits to probs
-        b1 = torch.cat(tuple(coarse_scores.values()))
-        coarse_scores = F.softmax(b1, dim = 0)
+            c_values = original_probs[:, c]
+            sum = torch.sum(c_values)
+            scores_original[i] = sum
 
-        b2 = torch.cat(tuple(pert_coarse_scores.values()))
-        pert_coarse_scores = F.softmax(b2, dim = 0)
+            c_values_p = perturbed_probs[:, c]
+            sum_p = torch.sum(c_values_p)
+            scores_perturbed[i] = sum_p
+
+
+        #Eliminate values of probs (perturbed and original)
+        coarse_idx = np.hstack(c_index) #index to eliminate
+      #  print(original_probs.shape, original_probs[0].shape)
+        coarse_scores = eliminate_elements_torch(original_probs[0], coarse_idx)
+        pert_coarse_scores = eliminate_elements_torch(perturbed_probs[0], coarse_idx)
+
+        new_classes = [string for idx, string in enumerate(classes) if idx not in coarse_idx]
+
+        #Concat new scores and new list of classes
+        coarse_scores = torch.cat((coarse_scores, scores_original), dim = 0)
+        pert_coarse_scores = torch.cat((pert_coarse_scores,  scores_perturbed), dim = 0)
+
+        new_classes = new_classes + c_classes
 
         #sorting values 
-        sorted_values1, sorted_indices = torch.sort(coarse_scores, descending=True)
-        sorted_keys1 = [unique_coarse[i] for i in sorted_indices]  
+        sorted_probs, sorted_indices = torch.sort(coarse_scores, descending=True)
+        sorted_classes = [new_classes[i] for i in sorted_indices]
 
-        sorted_values2, sorted_indices = torch.sort(pert_coarse_scores, descending=True)
-        sorted_keys2 = [unique_coarse[i] for i in sorted_indices]        
+        sorted_probs_p, sorted_indices_p = torch.sort(pert_coarse_scores, descending=True)
+        sorted_classes_p = [new_classes[i] for i in sorted_indices_p]
 
         #define dicts with probs
         probs_scores = {}
-        for key, value in zip(sorted_keys1, sorted_values1):
+        for key, value in zip(sorted_classes, sorted_probs):
             probs_scores[key] = value.item() 
 
         probs_p_scores = {}
-        for key, value in zip(sorted_keys2, sorted_values2):
+        for key, value in zip(sorted_classes_p, sorted_probs_p):
             probs_p_scores[key] = value.item() 
-        
 
         results.append({'original': original_dict, 'perturbed': perturbed_dict, 'coarse_scores': probs_scores, 'pert_coarse_scores': probs_p_scores})
 
@@ -559,7 +833,7 @@ def ensamble_attack_course_classes(image_folder, models, weights, epsilon, class
             perturbed_image = perturbed_image.squeeze().detach().cpu().numpy().transpose(1, 2, 0)
             perturbed_image = (perturbed_image * 255).astype('uint8')
             Image.fromarray(perturbed_image).save(os.path.join(output_dir, image_name))
-
+        #print(coarse_scores.sum(), pert_coarse_scores.sum())
         # Plot if graph is True
         if graph:
             print(f'Epsilon: {epsilon}')
@@ -570,15 +844,17 @@ def ensamble_attack_course_classes(image_folder, models, weights, epsilon, class
 
             plt.subplot(1, 3, 1)
             plt.imshow(original_image.squeeze().detach().cpu().numpy().transpose(1, 2, 0))
-            plt.title(f"Original: {max(probs_scores, key=probs_scores.get)} - {np.round(max(probs_scores.values()), 3)}",  fontsize=7)
+            plt.title(f"Original: {max(original_dict, key=original_dict.get)} - {np.round(max(original_dict.values()), 3)}" + "\n" + f"Original: {max(probs_scores, key=probs_scores.get)} - {np.round(max(probs_scores.values()), 3)}", fontsize=7)
             plt.axis('off')
-
+         #   print(f'C-Scores: {coarse_scores[sorted_indices[:5]]} - {sorted_classes[:5]}')
             plt.subplot(1, 3, 2)
             if folder:
                 plt.imshow(perturbed_image)
             else:
                 plt.imshow(perturbed_image.squeeze().detach().cpu().numpy().transpose(1, 2, 0))
-            plt.title(f"Perturbed: {max(probs_p_scores, key=probs_p_scores.get)} - {np.round(max(probs_p_scores.values()), 3)}", fontsize=7)
+            plt.title(f"Perturbed: {max(perturbed_dict, key=perturbed_dict.get)} - {np.round(max(perturbed_dict.values()), 3)}" + "\n" + f"Perturbed: {max(probs_p_scores, key=probs_p_scores.get)} - {np.round(max(probs_p_scores.values()), 3)}", fontsize=7)
+          #  print(f'Perturbed C-Scores: {pert_coarse_scores[sorted_indices_p[:5]]} - {sorted_classes_p[:5]}')
+
             plt.axis('off')
             
             plt.subplot(1, 3, 3)
@@ -596,5 +872,70 @@ def ensamble_attack_course_classes(image_folder, models, weights, epsilon, class
                 f.write(f"Original: {result['original']}\nPerturbed: {result['perturbed']}\nCoarse Scores: {result['coarse_scores']}\nPerturbated Coarse Scores: {result['pert_coarse_scores']}\n")
 
     return results
+
+
+def plot_results_ensamble(results, n_classes):
+    for i, res_dict in enumerate(results):
+        print(f'{i + 1}° Result')
+
+        orig_classes = list(res_dict['original'].keys())
+        orig_probabilities = list(res_dict['original'].values())
+        orig_classes_p = list(res_dict['perturbed'].keys())
+        orig_probabilities_p = list(res_dict['perturbed'].values())
+
+        coarse_classes = list(res_dict['coarse_scores'].keys())
+        coarse_probabilities = list(res_dict['coarse_scores'].values())
+        coarse_classes_p = list(res_dict['pert_coarse_scores'].keys())
+        coarse_probabilities_p = list(res_dict['pert_coarse_scores'].values())
+
+        # Generate colors for bars
+
+        # Create subplots
+        fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+        axes[0].bar(orig_classes[:n_classes], orig_probabilities[:n_classes])
+        axes[0].set_xlabel('Class')
+        axes[0].set_ylabel('Probability')
+        axes[0].set_title(f'Original Results - {i + 1}')
+
+        axes[0].set_xticks(range(len(orig_classes[:n_classes])))
+        axes[0].set_xticklabels(orig_classes[:n_classes], rotation=45, ha='right')
+        axes[0].set_ylim(0, 1)  # Set y-axis limit from 0 to 1
+
+        # Plot probability bar chart
+        axes[1].bar(orig_classes_p[:n_classes], orig_probabilities_p[:n_classes])
+        axes[1].set_xlabel('Class')
+        axes[1].set_ylabel('Probability')
+        axes[1].set_title(f'Original Results Perturbed - {i + 1}')
+    
+        axes[1].set_xticks(range(len(orig_classes_p[:n_classes])))
+        axes[1].set_xticklabels(orig_classes_p[:n_classes], rotation=45, ha='right')
+        axes[1].set_ylim(0, 1)  # Set y-axis limit from 0 to 1
+        plt.tight_layout()
+        plt.show()
+
+        fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+        axes[0].bar(coarse_classes[:n_classes], coarse_probabilities[:n_classes])
+        axes[0].set_xlabel('Class')
+        axes[0].set_ylabel('Probability')
+        axes[0].set_title(f'Coarse Results - {i + 1}')
+
+        axes[0].set_xticks(range(len(coarse_classes[:n_classes])))
+        axes[0].set_xticklabels(coarse_classes[:n_classes], rotation=45, ha='right')
+        axes[0].set_ylim(0, 1)  # Set y-axis limit from 0 to 1
+
+        # Plot probability bar chart
+        axes[1].bar(coarse_classes_p[:n_classes], coarse_probabilities_p[:n_classes])
+        axes[1].set_xlabel('Class')
+        axes[1].set_ylabel('Probability')
+        axes[1].set_title(f'Coarse Results Perturbed - {i + 1}')
+    
+        axes[1].set_xticks(range(len(coarse_classes_p[:n_classes])))
+        axes[1].set_xticklabels(coarse_classes_p[:n_classes], rotation=45, ha='right')
+        axes[1].set_ylim(0, 1)  # Set y-axis limit from 0 to 1
+        plt.tight_layout()
+        plt.show()
+
 
 
