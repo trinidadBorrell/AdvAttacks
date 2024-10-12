@@ -449,7 +449,7 @@ def ensamble_attack(image_folder, models, weights, epsilon, classes, targeted = 
 #3)-----------------ENSAMBLE ATTACK iFGSM + COaRSE CLASSES-------------------------
 
 def get_coarse_arrays():
-    labels = ['cat', 'dog', 'bird', 'bottle', 'chair', 'elephant', 'clock', 'truck']
+    labels = ['cat', 'dog', 'bird', 'bottle', 'chair', 'elephant', 'clock', 'truck', 'snake', 'spider', 'sheep']
 
     #cat : 6 (282 - 287) -> 6 
     #obs: cambia con respecto a los valores de arriba porque las lineas en imageclassnet =/= a la ubicación en la lista importada
@@ -482,9 +482,18 @@ def get_coarse_arrays():
     #truck: 8 (556) + (570) + (718) + (865) + (868) + (676) + (657)
     #obs: cambia con respecto a los valores de arriba porque las lineas en imageclassnet =/= a la ubicación en la lista importada
     truck = np.array([555, 569, 656, 675, 717, 734, 864, 867])
+    
+    #snake: del 52 al 68 inclusive
+    snake = np.arange(52, 69)
+
+    #spider: del 72 al 77 inclusive
+    spider = np.arange(72, 78)
+
+    #sheep: del 348 al 352
+    sheep = np.arange(348, 353)
 
     #index = [np.arange(8, 25), np.arange(151, 276), np.arange(280, 286)]
-    index = [cat, dog, bird, bottle, chair, elephant, clock, truck]
+    index = [cat, dog, bird, bottle, chair, elephant, clock, truck, snake, spider, sheep]
     return labels, index
 
 def eliminate_elements_torch(tensor, indices):
