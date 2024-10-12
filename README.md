@@ -6,7 +6,7 @@ This repository focuses on generating **adversarial attacks** on an ensemble of 
 
 #### Attack Methods
 
-We implement both **targeted** and **untargeted** adversarial attacks using **iFSGM** and **FSGM**, considering **thin** and **coarse** class groups. Additionally, we generate **control images** by manipulating the adversarial perturbations through the following methods: *i) Flipping the perturbations*, *ii) Randomizing the phase in Fourier image space*
+The code implements both **targeted** and **untargeted** adversarial attacks using **iFSGM** and **FSGM**, considering **thin** and **coarse** class groups. Additionally, it can generate **control images** by manipulating the adversarial perturbations through the following methods: *i) Flipping the perturbations*, *ii) Randomizing the perturbation's phase in Fourier image space*
 
 #### 📂 Repository Structure
 
