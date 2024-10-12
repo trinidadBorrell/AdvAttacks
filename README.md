@@ -16,4 +16,4 @@ We implement both **targeted** and **untargeted** adversarial attacks using **iF
 
 #### 🔄 Future Updates
 
-This repository is still being refined, and future updates will focus on enhancing usability and making it more user-friendly. For now, the repository provides the initial structure and tools used to generate over 900 attacked images.
+This repository is still being refined, and future updates will focus on enhancing usability and making it more user-friendly. For now, the repository provides the initial structure and tools used to generate over 900 attacked images to run forced-choice experiments in humans.
